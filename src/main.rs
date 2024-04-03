@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 async fn tray_start() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/icons/icon.ico");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/icons/program.ico");
     let icon = load_icon(Path::new(path));
     let (is_autorun, is_program_started) = reg_init_check();
     
