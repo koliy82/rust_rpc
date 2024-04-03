@@ -1,78 +1,132 @@
-mod animations;
+#![allow(unused)]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use std::{env, thread};
 use std::error::Error;
-use std::ops::Not;
+use std::ops::{Not};
 use std::path::Path;
-use std::time::Duration;
+use std::sync::mpsc::channel;
+use std::time::{Duration, SystemTime};
+use std::{env, thread};
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+use std::thread::{sleep, spawn};
+use discord_sdk::activity::{ActivityBuilder, Assets, Button};
+use discord_sdk::Subscriptions;
 
-use discord_rich_presence::{DiscordIpc, DiscordIpcClient};
+use crate::models::animation::Animation;
+use crate::models::message::Message;
 use dotenv::dotenv;
+use tao::event_loop::{ControlFlow, EventLoopBuilder};
+use tracing::{info, Level, trace};
+use tray_icon::menu::{AboutMetadata, CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
+use tray_icon::{TrayIconBuilder, TrayIconEvent};
+use tray_icon::menu::MenuItemKind::Check;
 use winreg::enums::HKEY_CURRENT_USER;
 use winreg::RegKey;
-use log::{error, info, trace, warn};
-use crate::animations::Animations;
+use crate::features::autorun::{autorun_change, autorun_init_check};
+use crate::features::utils::load_icon;
+use crate::models::client::{Client};
 
-fn main() -> Result<(), Box<dyn Error>> {
-    simple_logger::init_with_level(log::Level::Trace).unwrap();
-    info!("Starting Discord Rich Presence...");
+mod models;
+mod animations;
+mod features;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt()
+        .compact()
+        .with_max_level(Level::TRACE)
+        .init();
+    trace!("Initialise program...");
+
     dotenv().ok();
-    autorun_init();
+    tray_start().await;
 
-    let client_id = env::var("CLIENT_ID").expect("Not find CLIENT_ID in .env");
-    let animation_id = match env::var("ANIMATION_ID") {
-        Ok(value) => value.parse::<i32>().unwrap(),
-        Err(_) => 1,
-    };
-
-    let mut client = DiscordIpcClient::new(client_id.as_str()).expect("Failed to create client");
-
-    loop {
-        match client.connect() {
-            Ok(_) => {
-                info!("Client connected to Discord successfully.");
-                break;
-            }
-            Err(_) => {
-                error!("Client failed to connect to Discord, next try...");
-            }
-        };
-        thread::sleep(Duration::from_secs(10));
-    }
-
-
-    loop {
-        Animations::run(animation_id, &mut client);
-        trace!("animation end");
-        thread::sleep(Duration::from_secs(10));
-    }
+    Ok(())
 }
 
-fn autorun_init() {
-    match env::var("AUTORUN_WINDOWS") {
-        Ok(is_run) => {
-            let current_user = RegKey::predef(HKEY_CURRENT_USER);
-            let path = Path::new("Software").join("Microsoft").join("Windows").join("CurrentVersion").join("Run");
-            let (key, _) = current_user.create_subkey(&path).unwrap();
+async fn tray_start() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/icons/icon.ico");
+    let icon = load_icon(Path::new(path));
+    let is_autorun = autorun_init_check();
+    let is_checked = false;
 
-            if is_run == "true" {
-                let current_dir = env::current_exe().expect("Failed find current execute file directory.");
-                let path = current_dir.as_os_str().to_str().expect("Failed to parse file directory.");
-                match key.get_value::<String, &str>("test") {
-                    Ok(value) => {
-                        if value.eq(path).not() {
-                            warn!("Autorun path is different, updating...");
-                            key.set_value("test", &path).unwrap();
-                        }
-                    }
-                    Err(_) => {
-                        key.set_value("test", &path).unwrap();
-                    }
-                }
-            } else {
-                key.delete_value("test").unwrap();
-            }
+    let event_loop = EventLoopBuilder::new().build();
+    let tray_menu = Menu::new();
+
+    let enable_i = CheckMenuItem::new("DiscordRPC by koliy82", true, is_checked, None);
+    let autorun_i = CheckMenuItem::new("Autorun", true, is_autorun, None);
+    let quit_i = MenuItem::new("Quit", true, None);
+
+    tray_menu.append_items(&[
+        &enable_i,
+        &autorun_i,
+        &PredefinedMenuItem::separator(),
+        &PredefinedMenuItem::about(
+            None,
+            Some(AboutMetadata {
+                name: Some("rust rpc".to_string()),
+                copyright: Some("Copyright".to_string()),
+                ..Default::default()
+            }),
+        ),
+        &quit_i,
+    ]);
+
+    let mut tray_icon = Some(
+        TrayIconBuilder::new()
+            .with_menu(Box::new(tray_menu))
+            .with_tooltip("rust_rpc")
+            .with_icon(icon)
+            .build()
+            .unwrap(),
+    );
+
+    let menu_channel = MenuEvent::receiver();
+    let tray_channel = TrayIconEvent::receiver();
+    
+    let app_id = match env::var("APP_ID") {
+        Ok(value) => value.parse::<i64>().unwrap(),
+        Err(_) => 1082747708118417573,
+    };
+    
+    let mut client = match Client::new(app_id, Subscriptions::empty()).await {
+        Ok(value) => value,
+        Err(_) => {
+            panic!("EXCEPTION ON CREATE DISCORD CLIENT")
         }
-        Err(_) => { return; }
-    }
+    };
+
+    event_loop.run( move |_event, _, control_flow| {
+        *control_flow = ControlFlow::Poll;
+
+        if let Ok(event) = menu_channel.try_recv() {
+            
+            if event.id == enable_i.id() {
+                if enable_i.is_checked() {
+                    trace!("on");
+                    let animation_id = match env::var("ANIMATION_ID") {
+                        Ok(value) => value.parse::<i32>().unwrap(),
+                        Err(_) => 1,
+                    };
+                    client.start_animation(animation_id);
+                }else{
+                    trace!("off");
+                    client.stop_animation();
+                }
+            }
+            if event.id == autorun_i.id() {
+                autorun_change(autorun_i.is_checked())
+            }
+            if event.id == quit_i.id() {
+                tray_icon.take();
+                *control_flow = ControlFlow::Exit;
+            }
+            trace!("{event:?}");
+        }
+
+        if let Ok(event) = tray_channel.try_recv() {
+            trace!("{event:?}");
+        }
+    })
 }
