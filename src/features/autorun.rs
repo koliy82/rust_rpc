@@ -1,20 +1,28 @@
 use std::env;
 use std::path::Path;
-use log::{info, trace, warn};
+use log::{error, info, trace, warn};
+use serde_json::Value::Bool;
 use winreg::enums::{HKEY_CURRENT_USER, RegDisposition};
 use winreg::RegKey;
 
-const PROGRAM_KEY_NAME: &str = "koliy82_rust_rpc";
+const PROGRAM_KEY_NAME: &str = "Koliy82RPC";
+const AUTOSTART_SUB_KEY: &str = "autostart";
 
 fn autorun_key_get() -> (RegKey, RegDisposition) {
-    let current_user = RegKey::predef(HKEY_CURRENT_USER);
-    let path = Path::new("Software")
-        .join("Microsoft")
-        .join("Windows")
-        .join("CurrentVersion")
-        .join("Run");
+    return RegKey::predef(HKEY_CURRENT_USER).create_subkey(
+        Path::new("Software")
+          .join("Microsoft")
+          .join("Windows")
+          .join("CurrentVersion")
+          .join("Run")
+    ).unwrap();
+}
 
-    return current_user.create_subkey(&path).unwrap();
+fn program_key_get() -> (RegKey, RegDisposition) {
+    return RegKey::predef(HKEY_CURRENT_USER).create_subkey(
+        Path::new("Software")
+            .join(PROGRAM_KEY_NAME)
+    ).unwrap();
 }
 
 pub fn autorun_change(is_set: bool) {
@@ -43,19 +51,34 @@ pub fn autorun_change(is_set: bool) {
 
 }
 
-pub fn autorun_init_check() -> bool{
-    let (key, _) = autorun_key_get();
+pub fn autostart_change() {
+    
+    let (key, _) = program_key_get();
+    match key.get_value::<String, &str>(AUTOSTART_SUB_KEY) {
+        Ok(value) => {
+            key.set_value(AUTOSTART_SUB_KEY, &(!value.parse::<bool>().expect("failed to parse program starting boolean value")).to_string()).unwrap();
+            warn!("Autostart path changed") 
+        }
+        Err(_) => {
+            key.set_value(AUTOSTART_SUB_KEY, &"false").unwrap();
+            error!("Autostart path is not added.")
+        }
+    }
+    
+}
+
+pub fn reg_init_check() -> (bool, bool){
+    let (autorun_key, _) = autorun_key_get();
 
     let current_dir = env::current_exe()
         .expect("Failed find current execute file directory.");
-
     let path = current_dir.as_os_str().to_str()
         .expect("Failed to parse file directory.");
 
-    match key.get_value::<String, &str>(PROGRAM_KEY_NAME) {
+    let is_autorun = match autorun_key.get_value::<String, &str>(PROGRAM_KEY_NAME) {
         Ok(value) => {
             if !value.eq(path) {
-                key.set_value(PROGRAM_KEY_NAME, &path).unwrap();
+                autorun_key.set_value(PROGRAM_KEY_NAME, &path).unwrap();
                 warn!("Autorun path is different, path updated.");
             }
             true
@@ -63,5 +86,17 @@ pub fn autorun_init_check() -> bool{
         Err(_) => {
             false
         }
-    }
+    };
+
+    let (program_key, _) = program_key_get();
+    
+    let is_starting = match program_key.get_value::<String, &str>(AUTOSTART_SUB_KEY) {
+        Ok(value) => value.parse().expect("failed to parse program starting boolean value"),
+        Err(e) => {
+            program_key.set_value(AUTOSTART_SUB_KEY, &"false");
+            false
+        }
+    };
+
+    (is_autorun, is_starting)
 }

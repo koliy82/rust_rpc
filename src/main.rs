@@ -14,7 +14,6 @@ use discord_sdk::activity::{ActivityBuilder, Assets, Button};
 use discord_sdk::Subscriptions;
 
 use crate::models::animation::Animation;
-use crate::models::message::Message;
 use dotenv::dotenv;
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tracing::{info, Level, trace};
@@ -23,9 +22,10 @@ use tray_icon::{TrayIconBuilder, TrayIconEvent};
 use tray_icon::menu::MenuItemKind::Check;
 use winreg::enums::HKEY_CURRENT_USER;
 use winreg::RegKey;
-use crate::features::autorun::{autorun_change, autorun_init_check};
+use crate::features::autorun::{autorun_change, autostart_change, reg_init_check};
 use crate::features::utils::load_icon;
 use crate::models::client::{Client};
+use crate::models::json_animation::CustomAnimations;
 
 mod models;
 mod animations;
@@ -48,13 +48,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 async fn tray_start() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/icons/icon.ico");
     let icon = load_icon(Path::new(path));
-    let is_autorun = autorun_init_check();
-    let is_checked = false;
-
+    let (is_autorun, is_program_started) = reg_init_check();
+    
     let event_loop = EventLoopBuilder::new().build();
     let tray_menu = Menu::new();
 
-    let enable_i = CheckMenuItem::new("DiscordRPC by koliy82", true, is_checked, None);
+    let enable_i = CheckMenuItem::new("DiscordRPC by koliy82", true, is_program_started, None);
     let autorun_i = CheckMenuItem::new("Autorun", true, is_autorun, None);
     let quit_i = MenuItem::new("Quit", true, None);
 
@@ -87,15 +86,23 @@ async fn tray_start() {
     
     let app_id = match env::var("APP_ID") {
         Ok(value) => value.parse::<i64>().unwrap(),
-        Err(_) => 1082747708118417573,
+        Err(_) => 1225132045596885105,
     };
     
-    let mut client = match Client::new(app_id, Subscriptions::empty()).await {
+    let mut client = match Client::new(app_id).await {
         Ok(value) => value,
         Err(_) => {
             panic!("EXCEPTION ON CREATE DISCORD CLIENT")
         }
     };
+
+    if is_program_started{
+        let animation_id = match env::var("ANIMATION_ID") {
+            Ok(value) => value.parse::<i32>().unwrap(),
+            Err(_) => 1,
+        };
+        client.start_animation(animation_id);
+    }
 
     event_loop.run( move |_event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -103,6 +110,7 @@ async fn tray_start() {
         if let Ok(event) = menu_channel.try_recv() {
             
             if event.id == enable_i.id() {
+                autostart_change();
                 if enable_i.is_checked() {
                     trace!("on");
                     let animation_id = match env::var("ANIMATION_ID") {
