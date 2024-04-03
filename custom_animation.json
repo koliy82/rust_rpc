@@ -1,0 +1,21 @@
+{
+    "randomize": false,
+    "animations": [
+        {
+            "details": "🔇",
+            "state": "dadwad"
+        },
+        {
+            "details": "muted",
+            "state": "123"
+        },
+        {
+            "details": "🔇",
+            "state": "zxc"
+        },
+        {
+            "details": "muted",
+            "state": "45125fwfe"
+        }
+    ]
+}

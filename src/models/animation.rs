@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::{env, thread};
 use std::time::{Duration, SystemTime};
-use discord_sdk::activity::{Activity, ActivityBuilder, Assets, Button};
+use discord_sdk::activity::{Activity, ActivityArgs, ActivityBuilder, Assets, Button};
 use discord_sdk::Discord;
 use discord_sdk::lobby::search::LobbySearchCast::String;
 use log::trace;
@@ -17,7 +17,7 @@ use crate::models::client::Client;
 #[derive(Clone)]
 pub struct Animation {
     token: Arc<CancellationToken>,
-    discord: Arc<Mutex<Discord>>,
+    pub discord: Arc<Mutex<Discord>>,
 }
 
 impl Animation {
@@ -28,16 +28,17 @@ impl Animation {
         }
     }
 
-    pub async fn run(&self, animation_id: i32) {
+    pub async fn run(&self, animation_id: i32, started_time: SystemTime) {
         let interval = match env::var("INTERVAL_SECONDS") {
             Ok(value) => value.parse::<u64>().unwrap(),
-            Err(_) => 5,
+            Err(_) => 10,
         };
+        self.discord.lock().await.clear_activity();
         info!("Animation №{} is starting...", &animation_id);
         match animation_id {
-            1 => self.dead_inside(interval).await,
-            2 => self.loading(interval).await,
-            3 => self.json_custom(interval).await,
+            1 => self.dead_inside(interval, started_time).await,
+            2 => self.json_custom(interval, started_time).await,
+            3 => self.loading(interval, started_time).await,
             _ => error!("Неверный ID анимации"),
         }
     }
@@ -47,13 +48,9 @@ impl Animation {
         self.token.cancel();
     }
 
-    pub(crate) async fn update_discord_activity(&self, details: &str, state: &str) {
+    pub(crate) async fn update_discord_activity(&self, activity: ActivityBuilder) {
         let client = self.discord.lock().await;
-        let update = client.update_activity(
-            ActivityBuilder::default()
-            .details(details)
-            .state(state)
-        ).await;
+        let update = client.update_activity(activity).await;
         info!("updated activity: {:?}", update);
     }
 

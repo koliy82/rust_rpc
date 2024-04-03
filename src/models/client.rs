@@ -1,9 +1,10 @@
 use std::{env, thread};
+use std::ops::Add;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use discord_sdk::{Discord, DiscordApp, Subscriptions};
-use discord_sdk::activity::{ActivityBuilder, Assets, Button};
+use discord_sdk::activity::{ActivityBuilder, Assets, Button, IntoTimestamp};
 use discord_sdk::user::User;
 use discord_sdk::wheel::{UserState, Wheel};
 use tokio::task::JoinHandle;
@@ -14,20 +15,23 @@ use crate::models::animation::Animation;
 
 pub struct Client {
     pub discord: Arc<Mutex<Discord>>,
-    pub user: UserState,
+    pub user: User,
     pub wheel: Wheel,
     animation: Option<Animation>,
+    pub started_time: SystemTime,
 }
 
 impl Client {
-    pub async fn new(app_id: i64, subs: Subscriptions) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(app_id: i64) -> Result<Self, Box<dyn std::error::Error>> {
+        let started_time = SystemTime::now();
+        
         let (wheel, handler) = Wheel::new(Box::new(|err| {
             error!(error = ?err, "encountered an error");
         }));
 
         let mut user = wheel.user();
 
-        let discord = Discord::new(DiscordApp::PlainId(app_id), subs, Box::new(handler))
+        let discord = Discord::new(DiscordApp::PlainId(app_id), Subscriptions::empty(), Box::new(handler))
             .expect("unable to create discord client");
 
         info!("waiting for handshake...");
@@ -37,28 +41,30 @@ impl Client {
             UserState::Connected(user) => user.clone(),
             UserState::Disconnected(err) => panic!("failed to connect to Discord: {}", err),
         };
+        
+        info!("connected user: {}", user);
 
         let rp = ActivityBuilder::default()
-            .details("Fruit Tarts".to_owned())
-            .state("Pop Snacks".to_owned())
+            .details("Program is started".to_owned())
+            .state("Click start to load animation".to_owned())
             .assets(
                 Assets::default()
-                    .large("the".to_owned(), Some("u mage".to_owned()))
-                    .small("the".to_owned(), Some("i mage".to_owned())),
+                    .large("dota", Some(""))
             )
             .button(Button {
-                label: "discord-sdk by EmbarkStudios".to_owned(),
-                url: "https://github.com/EmbarkStudios/discord-sdk".to_owned(),
+                label: "Create You Animation by koliy82".to_owned(),
+                url: "https://github.com/koliy82/rust_rpc".to_owned(),
             })
-            .start_timestamp(SystemTime::now());
+            .start_timestamp(started_time);
 
         info!("updated activity: {:?}",discord.update_activity(rp).await);
         
         Ok(Self {
             discord: Arc::new(Mutex::new(discord)),
-            user: UserState::Connected(user),
+            user,
             wheel,
             animation: None,
+            started_time
         })
     }
     pub fn start_animation(&mut self, animation_id: i32) {
@@ -73,8 +79,10 @@ impl Client {
             Some(value) => value.clone()
         };
 
+        let timestamp_clone = self.started_time;
+        
         spawn( async move {
-            animation_clone.run(animation_id).await;
+            animation_clone.run(animation_id, timestamp_clone).await;
         });
     }
 

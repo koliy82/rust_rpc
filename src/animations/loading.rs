@@ -1,15 +1,17 @@
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
+use discord_sdk::activity::ActivityBuilder;
 use log::{info, trace};
 use ringbuffer::AllocRingBuffer;
 use crate::models::animation::Animation;
 
 impl Animation {
-    pub async fn loading(&self, interval: u64) {
+    pub async fn loading(&self, interval: u64, started_time: SystemTime) {
         info!("Starting Loading Animation");
-
+        let started = SystemTime::now();
+        
         let animations_char: Vec<&str> = vec![
             "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█", "▇", "▆", "▅", "▄", "▃", "▁",
         ];
@@ -21,7 +23,16 @@ impl Animation {
             }
             buffer.push_str(element);
             let formatted_str = format!("{} load", element.clone());
-            self.update_discord_activity(&buffer, "In an endless loop").await;
+            
+            let state = "Loading...";
+            let details = &buffer;
+
+            let activity = ActivityBuilder::default()
+                .details(details)
+                .state(state)
+                .start_timestamp(started_time);
+
+            self.update_discord_activity(activity).await;
             trace!("{}", element);
             tokio::time::sleep(Duration::from_secs(interval)).await;
         }
