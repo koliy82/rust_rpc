@@ -7,22 +7,26 @@ use std::path::Path;
 use std::sync::mpsc::channel;
 use std::time::{Duration, SystemTime};
 use std::{env, thread};
+use std::fmt::Debug;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::thread::{sleep, spawn};
+use auto_launch::{AutoLaunch, AutoLaunchBuilder};
 use discord_sdk::activity::{ActivityBuilder, Assets, Button};
 use discord_sdk::Subscriptions;
 
 use crate::models::animation::Animation;
 use dotenv::dotenv;
+use once_cell::sync::Lazy;
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
+use tokio::sync::Mutex;
 use tracing::{info, Level, trace};
 use tray_icon::menu::{AboutMetadata, CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{TrayIconBuilder, TrayIconEvent};
 use tray_icon::menu::MenuItemKind::Check;
 use winreg::enums::HKEY_CURRENT_USER;
 use winreg::RegKey;
-use crate::features::autorun::{autorun_change, autostart_change, reg_init_check};
+use crate::features::autorun::{AUTORUN, autorun_change, autostart_change, reg_init_check};
 use crate::features::utils::load_icon;
 use crate::models::client::{Client};
 use crate::models::json_animation::CustomAnimations;
@@ -33,22 +37,32 @@ mod features;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt()
-        .compact()
-        .with_max_level(Level::TRACE)
-        .init();
-    trace!("Initialise program...");
-
-    dotenv().ok();
+    
+    init().await;
+    
     tray_start().await;
 
     Ok(())
 }
 
+async fn init(){
+    tracing_subscriber::fmt()
+        .compact()
+        .with_max_level(Level::TRACE)
+        .init();
+    trace!("Initialise program...");
+    dotenv().ok();
+
+    let launch = AUTORUN.lock().await.clone();
+    trace!("AppName: {}", launch.get_app_name());
+    trace!("AppPath: {}", launch.get_app_path());
+}
+
 async fn tray_start() {
+
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/icons/program.ico");
     let icon = load_icon(Path::new(path));
-    let (is_autorun, is_program_started) = reg_init_check();
+    let (is_autorun, is_program_started) = reg_init_check().await;
     
     let event_loop = EventLoopBuilder::new().build();
     let tray_menu = Menu::new();
