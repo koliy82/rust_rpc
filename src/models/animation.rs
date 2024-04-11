@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 use discord_sdk::activity::{Activity, ActivityArgs, ActivityBuilder, Assets, Button};
 use discord_sdk::Discord;
 use discord_sdk::lobby::search::LobbySearchCast::String;
-use log::trace;
+use log::{debug, trace};
 use ringbuffer::AllocRingBuffer;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
@@ -39,6 +39,7 @@ impl Animation {
             1 => self.dead_inside(interval, started_time).await,
             2 => self.json_custom(interval, started_time).await,
             3 => self.loading(interval, started_time).await,
+            999 => self.started_connection(interval, started_time).await,
             _ => error!("Неверный ID анимации"),
         }
     }
@@ -51,7 +52,7 @@ impl Animation {
     pub(crate) async fn update_discord_activity(&self, activity: ActivityBuilder) {
         let client = self.discord.lock().await;
         let update = client.update_activity(activity).await;
-        info!("updated activity: {:?}", update);
+        debug!("updated activity: {:?}", update);
     }
 
     pub async fn alive_check(&self) -> bool {
