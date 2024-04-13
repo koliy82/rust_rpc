@@ -24,9 +24,15 @@ use tracing::{info, Level, trace};
 use tray_icon::menu::{AboutMetadata, CheckMenuItem, Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{TrayIconBuilder, TrayIconEvent};
 use tray_icon::menu::MenuItemKind::Check;
-use winreg::enums::HKEY_CURRENT_USER;
-use winreg::RegKey;
-use crate::features::autorun::{AUTORUN, autorun_change, autostart_change, reg_init_check};
+cfg_if::cfg_if! {
+    if #[cfg(windows)] {
+        use winreg::enums::HKEY_CURRENT_USER;
+        use winreg::RegKey;
+        use crate::features::autorun::{AUTORUN, autorun_change, autostart_change, reg_init_check};
+    }else {
+
+    }
+}
 use crate::features::utils::load_icon;
 use crate::models::client::{Client};
 use crate::models::json_animation::CustomAnimations;
@@ -53,26 +59,37 @@ async fn init(){
     trace!("Initialise program...");
     dotenv().ok();
 
-    let launch = AUTORUN.lock().await.clone();
-    trace!("AppName: {}", launch.get_app_name());
-    trace!("AppPath: {}", launch.get_app_path());
+
+    cfg_if::cfg_if! {
+        if #[cfg(windows)] {
+            let launch = AUTORUN.lock().await.clone();
+            trace!("AppName: {}", launch.get_app_name());
+            trace!("AppPath: {}", launch.get_app_path());
+        } else {
+
+        }
+    }
 }
 
 async fn tray_start() {
 
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/icons/program.ico");
     let icon = load_icon(Path::new(path));
+
+    #[cfg(target_os = "windows")]
     let (is_autorun, is_program_started) = reg_init_check().await;
     
     let event_loop = EventLoopBuilder::new().build();
     let tray_menu = Menu::new();
 
-    let enable_i = CheckMenuItem::new("DiscordRPC by koliy82", true, is_program_started, None);
+    let enable_i = CheckMenuItem::new("DiscordRPC by koliy82", true, true, None);
+    #[cfg(target_os = "windows")]
     let autorun_i = CheckMenuItem::new("Autorun", true, is_autorun, None);
     let quit_i = MenuItem::new("Quit", true, None);
 
     tray_menu.append_items(&[
         &enable_i,
+        #[cfg(target_os = "windows")]
         &autorun_i,
         &PredefinedMenuItem::separator(),
         &PredefinedMenuItem::about(
@@ -110,7 +127,7 @@ async fn tray_start() {
         }
     };
 
-    if is_program_started{
+    if true {
         let animation_id = match env::var("ANIMATION_ID") {
             Ok(value) => value.parse::<i32>().unwrap(),
             Err(_) => 1,
@@ -124,6 +141,7 @@ async fn tray_start() {
         if let Ok(event) = menu_channel.try_recv() {
             
             if event.id == enable_i.id() {
+                #[cfg(target_os = "windows")]
                 autostart_change();
                 if enable_i.is_checked() {
                     trace!("on");
@@ -137,6 +155,7 @@ async fn tray_start() {
                     client.stop_animation();
                 }
             }
+            #[cfg(target_os = "windows")]
             if event.id == autorun_i.id() {
                 autorun_change(autorun_i.is_checked())
             }
