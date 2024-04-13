@@ -1,6 +1,6 @@
 use std::env;
 use std::time::{Duration, SystemTime};
-use discord_sdk::activity::ActivityBuilder;
+use discord_sdk::activity::{ActivityBuilder, Assets};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use serde::de::Unexpected::Str;
@@ -21,19 +21,28 @@ impl Animation {
 
         loop {
             for animation in animations.clone() {
-                if self.alive_check().await {
-                    break;
+                if !self.alive_check().await {
+                    return;
                 }
                 println!("{:?}", animation);
 
                 let state = animation.state.unwrap_or_else(|| String::from("custom_animation_state"));
                 let details = animation.details.unwrap_or_else(|| String::from("custom_animation_details"));
-                let large_image_text = animation.large_image_text.unwrap_or_else(|| String::from("large_image_text"));
+                let large_image_text = animation.large_image_text.unwrap_or_else(|| String::from(""));
+                let large_image_key = animation.large_image_key.unwrap_or_else(|| String::from("dota"));
+                let small_image_text = animation.small_image_text.unwrap_or_else(|| String::from(""));
+                let small_image_key = animation.small_image_key.unwrap_or_else(|| String::from("the"));
+
 
                 let activity = ActivityBuilder::default()
                     .details(details)
                     .state(state)
-                    .start_timestamp(started_time);
+                    .start_timestamp(started_time)
+                    .assets(
+                        Assets::default()
+                            .large(large_image_key, Some(large_image_text))
+                            .small(small_image_key, Some(small_image_text))
+                    );
 
                 self.update_discord_activity(activity).await;
                 sleep(Duration::from_secs(interval)).await;

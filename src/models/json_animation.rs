@@ -29,9 +29,4 @@ impl CustomAnimations {
         json
     }
     
-    
-
-
-
-
 }

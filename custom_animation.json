@@ -3,19 +3,35 @@
     "animations": [
         {
             "details": "🔇",
-            "state": "dadwad"
+            "state": "dadwad",
+            "large_image_key": "dota",
+            "large_image_text": "dota",
+            "small_image_key": "the",
+            "small_image_text": "the"
         },
         {
             "details": "muted",
-            "state": "123"
+            "state": "123",
+            "large_image_key": "the",
+            "large_image_text": "the",
+            "small_image_key": "dota",
+            "small_image_text": "dota"
         },
         {
             "details": "🔇",
-            "state": "zxc"
+            "state": "zxc",
+            "large_image_key": "dota",
+            "large_image_text": "dota",
+            "small_image_key": "the",
+            "small_image_text": "the"
         },
         {
             "details": "muted",
-            "state": "45125fwfe"
+            "state": "45125fwfe",
+            "large_image_key": "the",
+            "large_image_text": "the",
+            "small_image_key": "dota",
+            "small_image_text": "dota"
         }
     ]
 }
