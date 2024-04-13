@@ -1,5 +1,5 @@
 use std::{env, thread};
-use std::ops::Add;
+use std::ops::{Add, Deref};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime};
@@ -19,10 +19,10 @@ pub struct Client {
     app_id: i64,
     subscriptions: Subscriptions,
     pub discord: Arc<Mutex<Discord>>,
-    pub user: User,
-    pub wheel: Wheel,
+    pub wheel: Arc<Mutex<Wheel>>,
     animation: Option<Animation>,
     pub started_time: SystemTime,
+    connect_checker: Option<JoinHandle<()>>,
 }
 
 impl Client {
@@ -35,10 +35,9 @@ impl Client {
         }));
 
         let mut user = wheel.user();
-        
+
         let discord = Discord::new(DiscordApp::PlainId(app_id), subscriptions, Box::new(handler))
             .expect("unable to create discord client");
-
         info!("waiting for handshake...");
         user.0.changed().await.unwrap();
 
@@ -68,16 +67,45 @@ impl Client {
 
         info!("updated activity: {:?}",discord.update_activity(rp).await);
         
-        Ok(Self {
+        let mut to_ret = Self {
             app_id,
             subscriptions,
             discord: Arc::new(Mutex::new(discord)),
-            user,
-            wheel,
+            wheel: Arc::new(Mutex::new(wheel)),
             animation: None,
-            started_time
-        })
+            started_time,
+            connect_checker: None
+        };
+
+        to_ret.start_connect_worker();
+
+        Ok(to_ret)
     }
+
+    fn start_connect_worker(&mut self) {
+        let wheel_clone = Arc::clone(&self.wheel);
+        let connection_worker = tokio::spawn(async move {
+            loop {
+                let val = wheel_clone.lock().await;
+                let mut user_recv = val.user().0;
+                if user_recv.changed().await.is_ok() {
+                    let user_state = user_recv.borrow_and_update();
+                    let user_state = &*user_state;
+                    match user_state {
+                        UserState::Connected(a) => {
+                            info!("User: {a}");
+                        }
+                        UserState::Disconnected(e) => {
+                            info!("Disconnect: {e}");
+                        }
+                    }
+                }
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        });
+        self.connect_checker = Some(connection_worker);
+    }
+
 
     async fn retry_connection(client: Arc<Self>) {
         let mut interval = time::interval(Duration::from_secs(60));

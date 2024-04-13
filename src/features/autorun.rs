@@ -2,13 +2,20 @@ use std::env;
 use std::ops::Not;
 use std::path::Path;
 use auto_launch::{AutoLaunch, AutoLaunchBuilder};
+use cfg_if::cfg_if;
 use log::{error, info, trace, warn};
 use once_cell::sync::Lazy;
 use serde_json::Value::Bool;
 use tokio::sync::Mutex;
 use tracing::Instrument;
-use winreg::enums::{HKEY_CURRENT_USER, RegDisposition};
-use winreg::RegKey;
+cfg_if::cfg_if! {
+    if #[cfg(windows)] {
+        use winreg::enums::{HKEY_CURRENT_USER, RegDisposition};
+        use winreg::RegKey;
+    } else {
+
+    }
+}
 use crate::{features, init};
 
 pub(crate) const PROGRAM_KEY_NAME: &str = "Koliy82RPC";
@@ -38,12 +45,14 @@ fn autorun_key_get() -> (RegKey, RegDisposition) {
     ).unwrap();
 }
 
+#[cfg(target_os = "windows")]
 fn program_key_get() -> (RegKey, RegDisposition) {
     return RegKey::predef(HKEY_CURRENT_USER).create_subkey(
         Path::new("Software")
             .join(PROGRAM_KEY_NAME)
     ).unwrap();
 }
+
 
 pub fn autorun_change(is_set: bool) {
     // let (key, _) = autorun_key_get();
@@ -88,6 +97,7 @@ pub fn autorun_change(is_set: bool) {
 
 }
 
+#[cfg(target_os = "windows")]
 pub fn autostart_change() {
     
     let (key, _) = program_key_get();
@@ -104,6 +114,7 @@ pub fn autostart_change() {
     
 }
 
+#[cfg(target_os = "windows")]
 pub async fn reg_init_check() -> (bool, bool){
 
     let launch = AUTORUN.lock().await;
